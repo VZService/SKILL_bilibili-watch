@@ -51,4 +51,4 @@ scripts/bili_watch.py # 核心脚本：字幕/弹幕/评论/搜索
 
 ## 来源
 
-由 VZService 团队维护，衍生自「Linux√10」系列整活视频的转写需求。
+由 VZService 团队维护
