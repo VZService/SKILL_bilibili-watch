@@ -46,7 +46,8 @@ def fetch_subtitle(url, browser):
     """抓 AI 字幕，返回带时间戳的文本(每行 "[mm:ss] 内容")；无则 None。"""
     out = tempfile.mkdtemp()
     args = [
-        "--write-auto-subs",
+        "--write-subs",          # B站 AI 字幕(ai-zh) 挂在普通字幕区，必须用 --write-subs 才能抓到
+        "--write-auto-subs",     # 兼容 YouTube 等自动字幕区
         "--sub-langs",
         "ai-zh",
         "--skip-download",
@@ -256,39 +257,56 @@ def fetch_metadata(url, browser):
 
 
 def search_bili(keyword, cookies=None, limit=20, order="totalrank"):
-    """关键字搜视频(公开接口，无需登录)。返回 [(bvid, title, author, duration), ...]。
+    """关键字搜视频(先 API，空了回退网页搜索页解析)。返回 [(bvid, title, author, duration), ...]。
 
     order: totalrank(默认综合) / click(播放) / pubdate(最新) / dm(弹幕) / stow(收藏)。
+    注: API 接口 `x/web-interface/(wbi/)search/all/v2` 现常被风控返回空壳(numResults>0 但 result 空)，
+        此时自动改抓 https://search.bilibili.com 网页端 SSR 数据(同样可拿标题/BV/UP/时长)。
     """
-    enc = urllib.parse.quote(keyword)
-    url = f"https://api.bilibili.com/x/web-interface/search/all/v2?keyword={enc}&order={order}"
-    try:
-        raw = _http_get(url, headers={"Cookie": "; ".join(f"{k}={v}" for k, v in cookies.items())} if cookies else None)
-    except Exception:
-        return []
-    try:
-        data = json.loads(raw)
-    except Exception:
-        return []
+    cookie_header = {"Cookie": "; ".join(f"{k}={v}" for k, v in cookies.items())} if cookies else None
     results = []
-    has_video_group = any(g.get("result_type") == "video" for g in data.get("data", {}).get("result", []))
-    for group in data.get("data", {}).get("result", []):
-        if group.get("result_type") != "video":
-            continue
-        for item in group.get("result", [])[:limit]:
-            bvid = item.get("bvid", "")
-            if not bvid:
+    try:
+        img_key, sub_key = get_wbi_keys(cookies)
+        if img_key and sub_key:
+            params = wbi_sign({"keyword": keyword, "order": order, "page": 1}, img_key, sub_key)
+            url = "https://api.bilibili.com/x/web-interface/wbi/search/all/v2?" + urllib.parse.urlencode(params)
+        else:
+            enc = urllib.parse.quote(keyword)
+            url = f"https://api.bilibili.com/x/web-interface/search/all/v2?keyword={enc}&order={order}"
+        raw = _http_get(url, headers=cookie_header)
+        data = json.loads(raw)
+        for group in data.get("data", {}).get("result", []):
+            if group.get("result_type") != "video":
                 continue
-            title = re.sub(r"<[^>]+>", "", item.get("title", "")).strip()
-            author = item.get("author", "")
-            duration = item.get("duration", "")
-            results.append((bvid, title, author, duration))
-            if len(results) >= limit:
-                return results
-    if not results and not has_video_group:
-        # video 分组成员被空置，通常因无登录态触发风控
-        print("[!] 提示: 搜索接口未返回 video 分组(视频列表为空)，多半是无登录态被风控。")
-        print("    → 用 --cookies 喂入导出的 bilibili cookie 文件，或在已登录的本机运行。")
+            for item in group.get("result", []):
+                bvid = item.get("bvid", "")
+                if not bvid:
+                    continue
+                title = re.sub(r"<[^>]+>", "", item.get("title", "")).strip()
+                results.append((bvid, title, item.get("author", ""), item.get("duration", "")))
+                if len(results) >= limit:
+                    return results
+    except Exception:
+        pass
+
+    # API 空壳/失败 → 回退网页搜索页(SSR 直接渲染卡片，躲开 API 风控)
+    if not results:
+        try:
+            html = _http_get(
+                "https://search.bilibili.com/all?keyword=" + urllib.parse.quote(keyword) + f"&order={order}",
+                headers=cookie_header,
+            )
+            for card in re.split(r'<div class="bili-video-card__wrap"', html)[1:]:
+                m_bv = re.search(r"/video/(BV[0-9A-Za-z]{10})", card)
+                m_tit = re.search(r'bili-video-card__info--tit" title="([^"]+)"', card)
+                m_author = re.search(r'bili-video-card__info--author"[^>]*>([^<]+)<', card)
+                m_dur = re.search(r'bili-video-card__stats__duration"[^>]*>([^<]+)<', card)
+                if m_bv and m_tit:
+                    results.append((m_bv.group(1), m_tit.group(1), m_author.group(1) if m_author else "", m_dur.group(1) if m_dur else ""))
+                    if len(results) >= limit:
+                        return results
+        except Exception:
+            pass
     return results
 
 
@@ -315,6 +333,22 @@ def load_cookies_from_file(path):
         if len(parts) >= 7:
             cookies[parts[5]] = parts[6]
     return cookies
+
+
+def load_browser_cookies(browser):
+    """用 yt-dlp 把浏览器登录态提取为 dict；失败(未装/DPAPI 加密/未登录)返回 None。"""
+    if not browser:
+        return None
+    try:
+        from yt_dlp.cookies import extract_cookies_from_browser
+        jar = extract_cookies_from_browser(browser)
+        cks = {}
+        for c in jar:
+            if c.domain and "bilibili" in c.domain and c.name and c.value:
+                cks[c.name] = c.value
+        return cks or None
+    except Exception:
+        return None
 
 
 def wbi_sign(params, img_key, sub_key):
@@ -463,7 +497,12 @@ def main():
     # 搜索模式: 列出候选视频，不抓正文
     if args.search:
         print(f"[*] 搜索: {args.target}")
-        results = search_bili(args.target, limit=args.search_limit, order=args.search_order)
+        cookies = None
+        if args.cookies and os.path.exists(args.cookies):
+            cookies = load_cookies_from_file(args.cookies)
+        else:
+            cookies = load_browser_cookies(args.browser)
+        results = search_bili(args.target, cookies=cookies, limit=args.search_limit, order=args.search_order)
         if not results:
             print("[X] 没搜到结果(接口可能被限流或需登录)")
             sys.exit(1)
