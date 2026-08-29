@@ -1,7 +1,7 @@
 ---
 name: bili-watch
 description: "将 B站（Bilibili）视频转成可阅读文本，让 AI 看懂视频内容并总结、问答。优先抓 AI 字幕（需用户浏览器登录态）；无论有无字幕，都百分百输出带时间戳的弹幕（无需登录，可折叠重复）。Triggers: 用户分享 B站视频链接或 BV 号想总结或转写或讨论内容时，如「看这个视频」「这个B站视频讲啥」「帮我看看B站」「B站视频转文字」「bilibili 字幕 弹幕」。"
-version: 1.2.0
+version: 1.2.1
 author: WorkBuddy
 tags:
   - bilibili
@@ -60,6 +60,8 @@ agent_created: true
 - 依赖：`pip install yt-dlp imageio-ffmpeg`（imageio-ffmpeg 自带静态 ffmpeg，无需系统装）。
 - **自动选格式（关键坑）**：`-f "bv*[height<=1080]+ba/b[height<=1080]" --format-sort "vbr:asc"` —— 强制挑 1080p 内码率最低的普通档，避开大会员「1080P 高码率/60帧」档（free 账号下会报格式不可用）。格式 ID 因视频而异（30080/100050/80…），**禁止硬编码格式 ID**。失败自动降级 720p 重试。
 - 读图规范：AI 用 Read 逐张读帧，**每批 ≤4 张**；**严禁脑补画面冒充看见**（历史翻车：拿标题猜"治愈向混剪"结果实为聊天体整活）；看不清放大 `--width 1920` 重抽。
+- **合集/特殊页坑**：遇到 `Unable to extract initial state` 报错（常见于系列合集页或"纯享版"合集），给 yt-dlp 加 `--extractor-args "bilibili:download_via_api=true"` 改走 view API 提取；若该 BV 实际是合集，默认会下全部分P，必须追加 `--playlist-items N` 只取第 N 个分P，否则可能一次性下几百个视频。
+- **超长视频抽帧坑**：`fps=1/interval` 滤镜会完整软解整个视频，对数小时以上的"纯享版"循环视频会卡死。此时应改用 `ffmpeg -ss 时间点 -i <视频> -frames:v 1` 按时间点 seek 抽代表性单帧（每 10~30 分钟抽一张），而不是用 `fps` 连续抽帧。
 
 ## Notes
 - 协作方式：用户在自己的 Windows 上跑脚本拿文本后，把结果贴给 WorkBuddy；或若 WorkBuddy 能访问本机则直接调用脚本。沙箱环境无浏览器登录态，字幕分支演示不了，但弹幕分支可在此直接验证。
