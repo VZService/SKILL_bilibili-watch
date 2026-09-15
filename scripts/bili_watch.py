@@ -212,18 +212,25 @@ def dedupe_danmaku(text, min_count=2):
 def fetch_metadata(url, browser):
     """抓取视频元数据(标题/UP主/简介/分区/时长/发布时间)，无需登录。
 
-    优先走 yt-dlp --dump-json(公开信息)；失败则退回网页解析关键字段。
+    🐛 2026-09-15 修复(笔记本无 Firefox 时元数据整块变空)：
+    旧版一上来就带 --cookies-from-browser <默认 firefox>，本机没装该浏览器时
+    yt-dlp 直接报错、stdout 为空，导致**公开元数据也一起抓不到**(标题/UP/时长全空)。
+    元数据是公开信息，不该依赖登录态。现改为：
+      ① 先无 cookie 抓(--dump-json 公开信息，最稳)；
+      ② 失败再带 cookie 重试；
+      ③ 仍失败退回网页解析。
     """
-    args = ["--dump-json", "--skip-download"]
-    if browser:
-        args += ["--cookies-from-browser", browser]
-    args.append(url)
-    res = run_yt_dlp(args)
+    info = {}
+    for extra in ([], (["--cookies-from-browser", browser] if browser else [])):
+        args = ["--dump-json", "--skip-download"] + extra + [url]
+        res = run_yt_dlp(args)
+        try:
+            info = json.loads((res.stdout or "").strip().splitlines()[-1]) if (res.stdout or "").strip() else {}
+        except Exception:
+            info = {}
+        if info:
+            break
     meta = {}
-    try:
-        info = json.loads((res.stdout or "").strip().splitlines()[-1]) if res.stdout.strip() else {}
-    except Exception:
-        info = {}
     if info:
         meta = {
             "title": info.get("title", ""),

@@ -1,7 +1,7 @@
 ---
 name: bili-watch
 description: "将 B站（Bilibili）视频转成可阅读文本，让 AI 看懂视频内容并总结、问答。优先抓 AI 字幕（需用户浏览器登录态）；无论有无字幕，都百分百输出带时间戳的弹幕（无需登录，可折叠重复）。Triggers: 用户分享 B站视频链接或 BV 号想总结或转写或讨论内容时，如「看这个视频」「这个B站视频讲啥」「帮我看看B站」「B站视频转文字」「bilibili 字幕 弹幕」。"
-version: 1.2.1
+version: 1.2.2
 author: WorkBuddy
 tags:
   - bilibili
@@ -29,6 +29,7 @@ agent_created: true
   - **导出的 cookie 文件不可靠**：用 Cookie-Editor 导出 Netscape 格式 `.txt` 再 `--cookies 文件` 喂 `api.bilibili.com`，实测 `nav` 接口返回 `isLogin=false`（SESSDATA 在服务端已失效/被轮换，导出的是过期凭证），导致 `player/wbi/v2` 不返回字幕，只能退弹幕。**不要依赖导出的 cookie 文件**，改用 Firefox 实时登录态。
 - **弹幕无需登录**：`yt-dlp --write-subs --sub-langs danmaku --skip-download` 可直接抓弹幕 XML，作为无字幕时的退路（内容碎片化，且弹幕可能和当前视频主题混流，仅作大意参考，不可当真实字幕）。
 - **反爬**：默认 UA 直连 bilibili.com 会被 412 拦截；抓首页 BV 号/调接口需带浏览器 UA + Referer/Origin（如 `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36`，Referer `https://www.bilibili.com`）。
+- **元数据不依赖 cookie（2026-09-15 修复 v1.2.2）**：`--browser` 默认 `firefox`。**新机上若没装 Firefox，旧版会把公开元数据也一起丢空**（标题/UP/时长/播放全为 0），因为 `--dump-json` 一上来就带 `--cookies-from-browser firefox`，浏览器不存在时 yt-dlp 直接报错、stdout 为空。现改为：先无 cookie 抓公开元数据 → 失败再带 cookie 重试 → 仍失败退回网页解析。**元数据是公开信息，任何时候都不该依赖登录态。**
 - **环境依赖**：沙箱/新机常缺 `yt-dlp`，先 `python -m pip install -q yt-dlp`。抽帧需要 ffmpeg：`pip install imageio-ffmpeg`（自带静态二进制，无需系统装 ffmpeg）。whisper 通常缺失（ASR 音频转写分支默认不启用，用户已确认不需要）。
 
 ## Workflow
