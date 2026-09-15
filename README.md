@@ -52,7 +52,7 @@ python scripts/bili_frames.py --video "本地视频.mp4" --interval 2
 
 ## 关键提示
 
-- **字幕锁登录**：B站字幕需登录，`--cookies-from-browser firefox` 最稳；Chrome/Edge 因 App-Bound Encryption 读不出 cookie。
+- **字幕锁登录**：B站字幕需登录。脚本传 `--browser firefox`（底层是 yt-dlp 的 `--cookies-from-browser`），Firefox 最稳；Chrome/Edge 因 App-Bound Encryption 读不出 cookie。
 - **弹幕是重点**：无论有无字幕，弹幕都输出（这是对「无字幕视频只看弹幕」的升级——弹幕不再是退路）。
 - **无字幕 ≠ 未登录**：脚本会先 `--list-subs` 探查真实轨道，区分「视频本来没字幕」和「登录态没读到」，不再误报。
 - **字幕抓取走双通道**：主通道 yt-dlp（带 `[mm:ss]` 时间戳，优先），失败时由备用 API 通道兜底（纯文本）。判断「这个视频到底有没有字幕」请以主通道或 `--list-subs` 为准，备用通道在 2026-09 之前是坏的，用它探查会给出一片假阴性。
