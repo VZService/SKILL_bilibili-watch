@@ -55,6 +55,7 @@ python scripts/bili_frames.py --video "本地视频.mp4" --interval 2
 - **字幕锁登录**：B站字幕需登录，`--cookies-from-browser firefox` 最稳；Chrome/Edge 因 App-Bound Encryption 读不出 cookie。
 - **弹幕是重点**：无论有无字幕，弹幕都输出（这是对「无字幕视频只看弹幕」的升级——弹幕不再是退路）。
 - **无字幕 ≠ 未登录**：脚本会先 `--list-subs` 探查真实轨道，区分「视频本来没字幕」和「登录态没读到」，不再误报。
+- **字幕抓取走双通道**：主通道 yt-dlp（带 `[mm:ss]` 时间戳，优先），失败时由备用 API 通道兜底（纯文本）。判断「这个视频到底有没有字幕」请以主通道或 `--list-subs` 为准，备用通道在 2026-09 之前是坏的，用它探查会给出一片假阴性。
 - **画面路径靠抽帧**：`bili_frames.py` 只下载视频 + 抽关键帧，AI 用 Read 逐张读帧（每批 ≤4 张，看不清就 `--width 1920` 重抽）。**严禁拿标题/标签脑补画面冒充"看见"**；整活/鬼畜/实拍类视频信息在画面里时，优先走这条。
 
 ## 本仓库结构
@@ -67,5 +68,8 @@ scripts/bili_frames.py# 画面路径：下载视频 + ffmpeg 抽帧供 AI 读图
 
 ## 更新日记
 
+- **v1.2.3**：修复备用 API 字幕通道 `fetch_subtitle_via_api()` 的三处失效点。① `aid`/`cid` 原先从视频页 HTML 正则抽取，B站改版后恒为空，函数静默 `return None`；改用 `x/web-interface/view` 接口（wbi 签名），网页正则降为保底。② `player/wbi/v2` 用 POST 调用返回 `405 Method Not Allowed`，改为 GET + query string。③ `subtitles` 数组顺序不可信，实测返回 `['ai-zh','ai-en']` 却按序取到 `ai-en`，改为按 `lan` 排序优先中文。**连带发现**：该通道此前用于探测「视频有无字幕」全是假阴性，同一批样本修正后 32 个里 20 个有 `ai-zh`。实测 `BV1w6ZEYrEsb`：主通道 404 行带时间戳，备用通道 4597 字符中文。
+- **v1.2.2**：元数据不再依赖浏览器 cookie。`fetch_metadata()` 原先一上来就带 `--cookies-from-browser <默认 firefox>`，新机未装 Firefox 时 yt-dlp 直接报错、stdout 为空，**连公开的标题 / UP主 / 时长 / 播放量也一并丢空**。改为三级降级：先无 cookie 走 `--dump-json` → 失败再带 cookie 重试 → 仍失败退回网页解析。元数据是公开信息，任何时候都不该依赖登录态。
+- **v1.2.1**：SKILL.md 补充两个抽帧坑。合集页报 `Unable to extract initial state` 时，加 `--extractor-args "bilibili:download_via_api=true"` 改走 view API；超长视频（数小时纯享版）改用 `ffmpeg -ss 时间点 -frames:v 1` 按点 seek，避免 `fps=1/interval` 完整软解导致卡死。
 - **v1.2.0**：新增画面路径 `scripts/bili_frames.py`（下载视频 + ffmpeg 抽关键帧，供 AI 逐张读图看画面）；README 同步补充画面路径说明、能拉什么表新增「画面帧」、用法新增抽帧示例与参数、`关键约束` 章节改名为 `关键提示`。
 - **初版**：仅文本路径 `scripts/bili_watch.py`（字幕 / 弹幕 / 评论 / 搜索转写）。
