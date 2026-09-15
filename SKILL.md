@@ -38,9 +38,9 @@ agent_created: true
 
 ## Workflow
 1. 确认目标是 B站视频（链接或 BV 号）。
-2. 优先走字幕：运行 `scripts/bili_watch.py <BVID> --cookies-from-browser firefox`（脚本内部用 yt-dlp 抓并解析字幕）。**需在用户本机 Windows（Firefox 已登录 B站）运行**才拿得到字幕。
+2. 优先走字幕：运行 `scripts/bili_watch.py <BVID> --browser firefox`（脚本参数是 `--browser`，底层走 yt-dlp 的 `--cookies-from-browser`）。**需在用户本机 Windows（Firefox 已登录 B站）运行**才拿得到字幕。本机 Firefox 在 `D:\FIreFOX\firefox.exe`（非标准路径），2026-09-15 实测字幕分支通过。
 3. 先用 `--list-subs` 确认轨道：`python -m yt_dlp --cookies-from-browser firefox --list-subs <URL>`，看到 `ai-zh` 再抓；若只有 `danmaku` 说明登录态没过或视频无字幕。
-4. 若无字幕/未登录，脚本自动退弹幕分支，输出弹幕转写（碎片化大意，且可能与视频主题不符）。沙箱内无登录态时只能走这条。
+4. 若无字幕/未登录，脚本自动退弹幕分支，输出弹幕转写（碎片化大意，且可能与视频主题不符）。登录态不可用时只能走这条。
 5. 拿到文本后，由 AI 阅读并总结/问答。
 6. **画面型视频**（无字幕、或信息在画面里：整活/鬼畜/实拍/游戏集锦）：`python scripts/bili_frames.py <BVID>` 下载并抽帧，AI 用 Read 逐张读图（**每批 ≤4 张**，一次并发太多会报"模型不支持图片"）。**严禁拿标题/标签/套路脑补画面冒充"看见"**；看不清就 `--width 1920` 放大重抽。
 7. **不要落盘**：默认只在终端打印预览，不写文件。需长期存档才加 `--save` 生成 `<BVID>.transcript.txt`（用户曾明确要求不要默认保存弹幕文件）。
@@ -69,5 +69,5 @@ agent_created: true
 - **超长视频抽帧坑**：`fps=1/interval` 滤镜会完整软解整个视频，对数小时以上的"纯享版"循环视频会卡死。此时应改用 `ffmpeg -ss 时间点 -i <视频> -frames:v 1` 按时间点 seek 抽代表性单帧（每 10~30 分钟抽一张），而不是用 `fps` 连续抽帧。
 
 ## Notes
-- 协作方式：用户在自己的 Windows 上跑脚本拿文本后，把结果贴给 WorkBuddy；或若 WorkBuddy 能访问本机则直接调用脚本。沙箱环境无浏览器登录态，字幕分支演示不了，但弹幕分支可在此直接验证。
+- 协作方式：直接在本机 Windows 调用脚本即可（Firefox 登录态可读，字幕分支 2026-09-15 实测通过）；若落到无浏览器登录态的环境，字幕分支自动退化为弹幕分支。
 - 与 bilibili_learning_bot 区分：那是全账号托管（刷推荐/投币/评论/私信），封号 + API 费风险高；本 skill 仅做内容转写，低风险。
