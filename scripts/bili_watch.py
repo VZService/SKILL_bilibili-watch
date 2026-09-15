@@ -387,29 +387,46 @@ def fetch_subtitle_via_api(bvid, cookies):
     if not img_key or not sub_key:
         return None
 
-    # 2. 拿 aid + cid（从网页里抽）
-    html = _http_get(f"https://www.bilibili.com/video/{bvid}",
-                     headers={"Cookie": "; ".join(f"{k}={v}" for k, v in cookies.items())})
-    m_aid = re.search(r'"aid":(\d+)', html)
-    m_cid = re.search(r'"cid":(\d+)', html)
-    if not m_aid or not m_cid:
-        return None
-    aid, cid = m_aid.group(1), m_cid.group(1)
+    # 2. 拿 aid + cid：主走 web-interface/view（页面 HTML 结构变更后，原先的
+    #    `"aid":(\d+)` 正则已抽不到，会静默返回 None 让整条 API 通道失效）
+    cookie_header = {"Cookie": "; ".join(f"{k}={v}" for k, v in cookies.items())}
+    aid = cid = None
+    try:
+        vparams = wbi_sign({"bvid": bvid}, img_key, sub_key)
+        vurl = "https://api.bilibili.com/x/web-interface/view?" + urllib.parse.urlencode(vparams)
+        vdata = json.loads(_http_get(vurl, headers=cookie_header)).get("data") or {}
+        aid, cid = vdata.get("aid"), vdata.get("cid")
+    except Exception:
+        aid = cid = None
+    if not aid or not cid:
+        # 保底：仍试一次网页正则（旧路径）
+        html = _http_get(f"https://www.bilibili.com/video/{bvid}", headers=cookie_header)
+        m_aid = re.search(r'"aid":(\d+)', html)
+        m_cid = re.search(r'"cid":(\d+)', html)
+        if not m_aid or not m_cid:
+            return None
+        aid, cid = m_aid.group(1), m_cid.group(1)
+    aid, cid = str(aid), str(cid)
 
-    # 3. 调 player/wbi/v2 拿字幕直链
+    # 3. 调 player/wbi/v2 拿字幕直链（必须 GET；该接口对 POST 返回 405）
     params = wbi_sign({"aid": aid, "cid": cid, "bvid": bvid}, img_key, sub_key)
-    body = urllib.parse.urlencode(params).encode("utf-8")
-    resp = json.loads(_http_get(
-        "https://api.bilibili.com/x/player/wbi/v2",
-        headers={"Cookie": "; ".join(f"{k}={v}" for k, v in cookies.items()),
-                 "Content-Type": "application/x-www-form-urlencoded"},
-        data=body,
-    ))
+    purl = "https://api.bilibili.com/x/player/wbi/v2?" + urllib.parse.urlencode(params)
+    resp = json.loads(_http_get(purl, headers=cookie_header))
     subtitles = resp.get("data", {}).get("subtitle", {}).get("subtitles", [])
     if not subtitles:
         return None
-    # 优先 AI 字幕（ai_type>0），否则取第一个
-    sub = next((s for s in subtitles if s.get("ai_type", 0) > 0), subtitles[0])
+    # 轨道优先级：中文字幕(ai-zh / zh*) > 其它 AI 字幕 > 第一个
+    # 注：返回顺序不保证 ai-zh 在前，实测过 subtitles=['ai-zh','ai-en'] 却选到英文
+    def _rank(s):
+        lan = (s.get("lan") or "").lower()
+        ai = s.get("ai_type", 0) or 0
+        if lan.startswith("ai-zh") or lan.startswith("zh"):
+            return (0, -ai)
+        if ai > 0:
+            return (1, 0)
+        return (2, 0)
+
+    sub = sorted(subtitles, key=_rank)[0]
     sub_url = sub["subtitle_url"]
     if sub_url.startswith("//"):
         sub_url = "https:" + sub_url
