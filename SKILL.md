@@ -35,6 +35,9 @@ agent_created: true
   - ② **`player/wbi/v2` 只接受 GET**：旧代码用 `_http_get(url, data=body)` 走 POST，实测返回 `HTTP 405 Method Not Allowed`。改为 GET + query string。
   - ③ **字幕轨道顺序不可信**：`subtitles` 返回 `['ai-zh','ai-en']` 时按数组序取会拿到**英文**。改为按 `lan` 排序，`ai-zh`/`zh*` 优先。
 - **环境依赖**：沙箱/新机常缺 `yt-dlp`，先 `python -m pip install -q yt-dlp`。抽帧需要 ffmpeg：`pip install imageio-ffmpeg`（自带静态二进制，无需系统装 ffmpeg）。whisper 通常缺失（ASR 音频转写分支默认不启用，用户已确认不需要）。
+- **本机两个 Python 的分工（2026-09-27 实测踩到）**：WorkBuddy 内置 Python `C:/Users/Administrator/.workbuddy/binaries/python/versions/3.13.12/python.exe` 里 `yt-dlp` 已装，但 `pip install imageio-ffmpeg` 恒报 `Could not find a version that satisfies the requirement imageio-ffmpeg (from versions: none)`（平台标签同样是 win-amd64，原因未查明）。**抽帧改用系统 Python** `C:/Users/Administrator/AppData/Local/Programs/Python/Python313/python.exe`：`imageio-ffmpeg`（31.2 MB wheel，内含 `ffmpeg-win-x86_64-v7.1.exe`）与 `yt-dlp` 都能正常安装，装完 `bili_frames.py` 直接可用。省事做法：下载 + 抽帧整套都用系统 Python 跑，别在两边来回换。
+- **pip 必须加清华源**：`--index-url https://pypi.tuna.tsinghua.edu.cn/simple`（实测 7~9 MB/s）。本机网络本身是通的（`curl -s --noproxy '*'` 打 pypi 镜像返 200），所以 pip 报找不到包时先怀疑源与平台标签，别当成断网去折腾代理。
+- **`bili_frames.py` 抽完帧会删掉原片**（输出里有 `Deleting original file ...`），要留原视频得加 `-k`。短视频用 `--interval 2` 就够：23 秒的整活视频出 12 帧，三批读完正好覆盖全程。
 
 ## Workflow
 1. 确认目标是 B站视频（链接或 BV 号）。
